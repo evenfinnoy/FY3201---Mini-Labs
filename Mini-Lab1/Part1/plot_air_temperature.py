@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from temperature_common import DATA_DIR, load_series, plot_anomaly
 
 # Which column to plot: "monthly", "annual", "5yr", "10yr", or "20yr".
-RESOLUTION = "annual"
+RESOLUTION = "monthly"
 
 SOURCE_NOTE = (
     "Source: Berkeley Earth Land/Ocean Temperature Record (Rohde & Hausfather, 2020),\n"

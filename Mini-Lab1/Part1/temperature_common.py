@@ -73,7 +73,7 @@ def load_series(path: Path) -> pd.DataFrame:
     # 12-month centered moving average of the monthly anomaly, computed
     # ourselves (rather than relying on Berkeley Earth's own "annual" column)
     df["rolling_12mo"] = (
-        df["monthly_anomaly"].rolling(window=12, center=True, min_periods=12).mean()
+        df["monthly_anomaly"].rolling(window=12, center=False, min_periods=12).mean()
     )
     return df
 
