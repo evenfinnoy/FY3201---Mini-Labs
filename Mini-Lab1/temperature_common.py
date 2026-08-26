@@ -43,6 +43,19 @@ COLUMNS = [
     "twenty_yr_anomaly", "twenty_yr_unc_95",
 ]
 
+# Which of the file's five anomaly columns to plot. Python has no switch/case
+# statement (pre-3.10 anyway) - a dict lookup keyed by a plain string is the
+# idiomatic equivalent. Set the RESOLUTION variable at the top of each
+# plot_*.py script to one of these keys.
+# Each entry: (anomaly column, its 95% CI column, display label).
+COLUMN_CHOICES = {
+    "monthly": ("monthly_anomaly", "monthly_unc_95", "Monthly"),
+    "annual": ("annual_anomaly", "annual_unc_95", "Annual (12-month, centered)"),
+    "5yr": ("five_yr_anomaly", "five_yr_unc_95", "Five-year"),
+    "10yr": ("ten_yr_anomaly", "ten_yr_unc_95", "Ten-year"),
+    "20yr": ("twenty_yr_anomaly", "twenty_yr_unc_95", "Twenty-year"),
+}
+
 
 def load_series(path: Path) -> pd.DataFrame:
     """Read one Berkeley Earth-style anomaly block: whitespace-delimited,
@@ -65,13 +78,24 @@ def load_series(path: Path) -> pd.DataFrame:
     return df
 
 
-def plot_anomaly(df: pd.DataFrame, title: str, caption: str, color: str):
-    """Plot the monthly anomaly as a line with its 95% CI as a shaded band
-    around it, plus a 12-month moving average, in its own figure/window."""
+def plot_anomaly(
+    df: pd.DataFrame, series_label: str, source_note: str, color: str,
+    resolution: str = "monthly",
+):
+    """Plot the chosen anomaly column as a line with its 95% CI as a shaded
+    band around it, in its own figure/window.
+
+    series_label -- what the series physically is, e.g. "air temperature
+                    above sea ice" (used in the title/caption).
+    source_note  -- data source line(s) for the caption.
+    resolution   -- key into COLUMN_CHOICES: "monthly", "annual", "5yr",
+                    "10yr", or "20yr".
+    """
+    anomaly_col, unc_col, res_label = COLUMN_CHOICES[resolution]
     fig, ax = plt.subplots(figsize=(10, 5.5), constrained_layout=True)
 
-    lower = df.monthly_anomaly - df.monthly_unc_95
-    upper = df.monthly_anomaly + df.monthly_unc_95
+    lower = df[anomaly_col] - df[unc_col]
+    upper = df[anomaly_col] + df[unc_col]
 
     # Shaded uncertainty band, with a faint outline on its edges so the
     # band reads clearly as a band (not just noise around the line).
@@ -85,25 +109,42 @@ def plot_anomaly(df: pd.DataFrame, title: str, caption: str, color: str):
     ax.plot(df.date, upper, color=color, alpha=0.35, linewidth=0.4, zorder=2)
 
     ax.plot(
-        df.date, df.monthly_anomaly,
+        df.date, df[anomaly_col],
         color=color, alpha=0.9, linewidth=0.7,
-        label="Monthly anomaly",
+        label=f"{res_label} anomaly",
         zorder=3,
     )
-    ax.plot(
-        df.date, df.rolling_12mo,
-        color="black", linewidth=1.6,
-        label="12-month moving average",
-        zorder=4,
-    )
+
+    # The 12-month moving average is only meaningful as an extra overlay
+    # when plotting the raw monthly series - the other columns are already
+    # multi-year moving averages computed by Berkeley Earth.
+    if resolution == "monthly":
+        ax.plot(
+            df.date, df.rolling_12mo,
+            color="black", linewidth=1.6,
+            label="12-month moving average",
+            zorder=4,
+        )
 
     ax.axhline(0, color="grey", linewidth=0.8, linestyle="--", zorder=0)
     ax.set_xlabel("Year")
     ax.set_ylabel("Anomaly (°C, relative to 1951–1980)")
-    ax.set_title(title, loc="left", fontsize=13, fontweight="bold")
+    ax.set_title(
+        f"Berkeley Earth global temperature anomaly — {series_label} ({res_label})",
+        loc="left", fontsize=13, fontweight="bold",
+    )
     ax.legend(loc="upper left", fontsize=9, frameon=False)
     ax.grid(alpha=0.2)
 
+    caption = (
+        f"Figure. {res_label} global mean surface temperature anomaly (line) for {series_label}, relative\n"
+        "to the Jan 1951–Dec 1980 baseline, with its quoted measurement uncertainty shown as a shaded\n"
+        "95% confidence interval band."
+        + (" The black line is a 12-month centered moving average, computed here\nfrom the monthly series."
+           if resolution == "monthly" else
+           f" This {res_label.lower()} series is itself a moving average, already\ncomputed by Berkeley Earth.")
+        + f"\n{source_note}"
+    )
     fig.text(0.01, -0.05, caption, fontsize=8, ha="left", va="top", wrap=True)
 
     return fig, ax
