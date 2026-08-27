@@ -6,27 +6,14 @@ air-temperature-above-sea-ice anomaly (the standard series, per Part 1),
 for three start years: 1970, 1980 (primary), and 1990. All three windows
 run to the same end year - the last full calendar year in the record.
 
-Monthly values are averaged into annual means before fitting, because
-adjacent months are not statistically independent (a warm month tends to
-be followed by another warm one). Fitting the raw monthly series would
-treat each month as an independent observation and understate the
-trend's uncertainty.
-
-Uses Part1/temperature_common.py to read the data, so the raw file is
-never edited by hand here either.
+See trend_utils.py for the annual-averaging and OLS-fitting code shared
+with Q2.
 """
-
-import sys
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from scipy import stats
 
-PART1_DIR = Path(__file__).resolve().parent.parent / "Part1"
-sys.path.insert(0, str(PART1_DIR))
-from temperature_common import load_series  # noqa: E402
+from trend_utils import clip_end_year, fit_linear_trend, load_annual_air_temperature
 
 # Start years to compare. 1980 is the assignment's primary trend period.
 START_YEARS = [1970, 1980, 1990]
@@ -34,50 +21,9 @@ PRIMARY_START_YEAR = 1980
 REQUESTED_END_YEAR = 2025  # brief asks for "1980-2025"; clipped to available data below
 
 
-def annual_means(df: pd.DataFrame) -> pd.Series:
-    """Collapse the monthly anomaly into one mean per full calendar year
-    (a year is kept only if all 12 months are present)."""
-    by_year = df.groupby(df.date.dt.year)["monthly_anomaly"]
-    full_years = by_year.count()[by_year.count() == 12].index
-    return by_year.mean().loc[full_years]
-
-
-def fit_trend(annual: pd.Series, start_year: int, end_year: int) -> dict:
-    """OLS fit of annual-mean anomaly vs. year over [start_year, end_year].
-    Returns the slope and its 95% CI in degC/decade (using the t-distribution
-    with n-2 degrees of freedom, appropriate for a small/finite sample)."""
-    window = annual.loc[start_year:end_year]
-    years = window.index.to_numpy(dtype=float)
-    values = window.to_numpy(dtype=float)
-
-    fit = stats.linregress(years, values)
-    n = len(years)
-    t_crit = stats.t.ppf(0.975, df=n - 2)
-
-    return {
-        "start_year": int(years.min()),
-        "end_year": int(years.max()),
-        "n_years": n,
-        "slope_per_year": fit.slope,
-        "intercept": fit.intercept,
-        "slope_degC_per_decade": fit.slope * 10,
-        "ci95_degC_per_decade": t_crit * fit.stderr * 10,
-        "r_squared": fit.rvalue ** 2,
-    }
-
-
 def main():
-    air = load_series(PART1_DIR / "airTemps.txt")
-    annual = annual_means(air)
-
-    last_full_year = int(annual.index.max())
-    end_year = min(REQUESTED_END_YEAR, last_full_year)
-    if end_year < REQUESTED_END_YEAR:
-        print(
-            f"Note: the record's last full calendar year is {last_full_year}; "
-            f"using {end_year} as the fit window's end year instead of "
-            f"{REQUESTED_END_YEAR}.\n"
-        )
+    annual = load_annual_air_temperature()
+    end_year = clip_end_year(annual, REQUESTED_END_YEAR)
 
     print("Linear trend, annual-mean air-temperature-above-sea-ice anomaly")
     print(f"(all windows end in {end_year}; fitted to annual means, not monthly)\n")
@@ -87,7 +33,7 @@ def main():
 
     results = {}
     for start in START_YEARS:
-        r = fit_trend(annual, start, end_year)
+        r = fit_linear_trend(annual, start, end_year)
         results[start] = r
         marker = "  <- primary" if start == PRIMARY_START_YEAR else ""
         print(
