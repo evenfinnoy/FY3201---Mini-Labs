@@ -6,6 +6,7 @@ for global warming). See temperature_common.py for how the file is read.
 """
 
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from temperature_common import DATA_DIR, load_series, plot_anomaly
 
@@ -20,13 +21,18 @@ SOURCE_NOTE = (
 
 def main():
     air = load_series(DATA_DIR / "airTemps.txt")
-    plot_anomaly(
+    fig, ax = plot_anomaly(
         air,
         series_label="air temperature above sea ice",
         source_note=SOURCE_NOTE,
         color="tab:red",
         resolution=RESOLUTION,
     )
+
+    # The x-axis holds real dates (not plain year numbers), so the limits
+    # need to be dates too - e.g. plt.xlim(1960, 2022) would be misread as
+    # 1960 and 2022 *days* since 1970-01-01 (~mid-1975), not the years.
+    # ax.set_xlim(pd.Timestamp("1960-01-01"), pd.Timestamp("2022-12-31"))
     plt.show()
 
 

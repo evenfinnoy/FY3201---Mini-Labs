@@ -82,6 +82,7 @@ def main():
         fontsize=8, ha="left", va="top",
     )
 
+    ax.set_xlim(1960, 2030)
     plt.show()
 
 
