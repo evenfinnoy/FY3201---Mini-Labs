@@ -1,5 +1,5 @@
 # FY3201---Mini-Labs
 
-## Dette er GitHub-en til FY3201 Atmospheric Fy- Mini Labs!
+## This is the GitHub-en for FY3201 Atmospheric Physics and Climate Change!
 
-Her finner du alt som hører til dette faget!
+Everything regarding the mini-labs for the subject FY3201
