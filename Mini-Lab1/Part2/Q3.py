@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy import stats
 
-from external_data import load_ch4_annual, load_co2_annual, load_population_annual
+from external_data import load_ch4_annual, load_co2_annual, load_population_annual, print_citations
 from trend_utils import load_annual_air_temperature
 
 VARIABLES = {
@@ -48,6 +48,7 @@ def main():
     })
     start_year, end_year = harmonized.index.min(), harmonized.index.max()
 
+    print_citations(["CO2", "CH4", "Population"])
     print("Q3: correlation with the annual-mean temperature anomaly")
     print(f"Common period across all four series: {start_year}-{end_year} (n={len(harmonized)} years)\n")
     print(f"{'Variable':<12} | {'Pearson r':>9} | {'p-value':>10}")
@@ -104,7 +105,8 @@ def main():
         f"Figure. Top: annual series over {start_year}–{end_year}, each standardized (zero mean, unit variance) so\n"
         "they can be compared on one axis regardless of units. Bottom: pairwise scatter plots of the same data with\n"
         "an ordinary least-squares fit and Pearson correlation. Sources: Berkeley Earth (temperature), NOAA GML\n"
-        "(CO2, CH4), UN World Population Prospects 2024 via Our World in Data (population). All series harmonized\n"
+        "(CO2, CH4), UN World Population Prospects 2024 via Our World in Data (population) - exact URLs and\n"
+        "download dates are printed above and recorded in Part2/data_cache/*.source.txt. All series harmonized\n"
         "to annual means/values over their common period before computing correlations.",
         fontsize=8, ha="left", va="top",
     )

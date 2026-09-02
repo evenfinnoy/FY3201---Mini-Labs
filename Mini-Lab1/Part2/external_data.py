@@ -35,16 +35,51 @@ CH4_URL = "https://gml.noaa.gov/webdata/ccgg/trends/ch4/ch4_mm_gl.csv"
 POPULATION_URL = "https://ourworldindata.org/grapher/population-unwpp.csv"
 COCOA_URL = "https://ourworldindata.org/grapher/cocoa-bean-production.csv"
 
+# name -> cache filename, for looking citations back up after loading.
+CACHE_FILENAMES = {
+    "CO2": "co2_mm_gl.csv",
+    "CH4": "ch4_mm_gl.csv",
+    "Population": "population-unwpp.csv",
+    "Cocoa": "cocoa-bean-production.csv",
+}
+
+
+USER_AGENT = "Mozilla/5.0 (compatible; mini-project-1-data-fetch/1.0)"
+
 
 def fetch(url: str, filename: str) -> Path:
     """Download `url` to data_cache/`filename` if not already cached, and
-    return the local path."""
+    return the local path. The source URL and the actual download date are
+    written to a `<filename>.source.txt` sidecar the first time - so that
+    record survives even if this only ever prints to a console no one saved
+    (see citation() below to read it back).
+
+    Sends a browser-like User-Agent: some hosts (e.g. Our World in Data,
+    behind Cloudflare) return 403 Forbidden for Python's default
+    "Python-urllib/x.y" string, even though the URL works fine in a
+    browser or with curl."""
     DATA_CACHE_DIR.mkdir(exist_ok=True)
     path = DATA_CACHE_DIR / filename
+    meta_path = DATA_CACHE_DIR / f"{filename}.source.txt"
     if not path.exists():
-        print(f"Downloading {filename}\n  from {url}\n  on {date.today().isoformat()} ...")
-        urllib.request.urlretrieve(url, path)
+        download_date = date.today().isoformat()
+        print(f"Downloading {filename}\n  from {url}\n  on {download_date} ...")
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            path.write_bytes(response.read())
+        meta_path.write_text(f"url: {url}\ndownloaded: {download_date}\n")
     return path
+
+
+def citation(filename: str) -> str:
+    """Read back a cached file's source URL and download date, e.g. for
+    printing in a report or a figure caption: 'downloaded 2026-08-27 from
+    https://...'."""
+    meta_path = DATA_CACHE_DIR / f"{filename}.source.txt"
+    if not meta_path.exists():
+        return f"(no local download record for {filename} - run the loader once first)"
+    info = dict(line.split(": ", 1) for line in meta_path.read_text().strip().splitlines())
+    return f"downloaded {info['downloaded']} from {info['url']}"
 
 
 def _annual_mean_from_noaa(url: str, filename: str) -> pd.Series:
@@ -87,3 +122,13 @@ def load_cocoa_production_annual() -> pd.Series:
     """World cocoa bean production, annual, tonnes (FAO via OWID) - our
     real, downloadable stand-in for "world chocolate consumption"."""
     return _world_series_from_owid(COCOA_URL, "cocoa-bean-production.csv")
+
+
+def print_citations(names) -> None:
+    """Print 'downloaded <date> from <url>' for each dataset name in
+    `names` (keys of CACHE_FILENAMES) - call after loading, so the record
+    reflects files that actually exist on disk."""
+    print("Data sources (record these in your report too):")
+    for name in names:
+        print(f"  {name:<12} {citation(CACHE_FILENAMES[name])}")
+    print()

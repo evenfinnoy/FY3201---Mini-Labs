@@ -74,9 +74,14 @@ def main():
     # a single straight line over the same span?
     linear_full = fit_linear_trend(annual, quad_start, quad_end)
 
-    print(f"Part 2: quadratic fit, {quad['start_year']}-{quad['end_year']} (n={quad['n_years']})")
-    print(f"  Acceleration: {quad['acceleration_degC_per_decade2']:+.4f} "
+    print(f"Part 2: quadratic fit, {quad['start_year']}-{quad['end_year']} (n={quad['n_years']}, dof={quad['dof']})")
+    print(f"  Fitted formula:  anomaly(t) = a·t² + b·t + c,   t = (year − {quad_start}) / 10  (decades since {quad_start})\n")
+    print(f"    a = {quad['a']:+.5f} ± {quad['a_stderr']:.5f} °C/decade²   (p = {quad['a_pvalue']:.3g})")
+    print(f"    b = {quad['b']:+.5f} ± {quad['b_stderr']:.5f} °C/decade    (p = {quad['b_pvalue']:.3g})")
+    print(f"    c = {quad['c']:+.5f} ± {quad['c_stderr']:.5f} °C           (p = {quad['c_pvalue']:.3g})\n")
+    print(f"  Acceleration (= 2a): {quad['acceleration_degC_per_decade2']:+.4f} "
           f"± {quad['acceleration_ci95_degC_per_decade2']:.4f} °C/decade² (95% CI)")
+    print(f"  p-value for H0: acceleration = 0   ->   p = {quad['acceleration_pvalue']:.3g}")
     print(f"  R² (quadratic fit):        {quad['r_squared']:.3f}")
     print(f"  R² (single linear fit):    {linear_full['r_squared']:.3f}  "
           f"({linear_full['slope_degC_per_decade']:.3f} °C/decade over the same span)")
@@ -104,7 +109,8 @@ def main():
         color="black", linewidth=2.0, linestyle="--",
         label=(f"Quadratic fit {quad_start}–{quad_end}: acceleration "
                f"{quad['acceleration_degC_per_decade2']:+.4f} ± "
-               f"{quad['acceleration_ci95_degC_per_decade2']:.4f} °C/decade²"),
+               f"{quad['acceleration_ci95_degC_per_decade2']:.4f} °C/decade² "
+               f"(p={quad['acceleration_pvalue']:.2g})"),
     )
 
     ax.axhline(0, color="grey", linewidth=0.8, linestyle=":")

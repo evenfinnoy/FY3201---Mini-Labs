@@ -77,9 +77,15 @@ def fit_linear_trend(annual: pd.Series, start_year: int, end_year: int) -> dict:
 
 
 def fit_quadratic_trend(annual: pd.Series, start_year: int, end_year: int) -> dict:
-    """Fit anomaly = a + b*t + c*t^2 by OLS (t = decades since start_year,
-    just to keep the coefficients numerically well-scaled) and return the
-    acceleration d^2(anomaly)/dt^2 = 2c with its 95% CI, in degC/decade^2.
+    """Fit anomaly(t) = a*t^2 + b*t + c by OLS, where t = decades since
+    start_year (just to keep the coefficients numerically well-scaled - a
+    raw calendar year like 1970, squared, gives an ill-conditioned fit).
+
+    Returns the three coefficients with their standard errors and two-sided
+    p-values (H0: coefficient = 0, Student's t, n-3 degrees of freedom),
+    plus the acceleration d^2(anomaly)/dt^2 = 2a with its 95% CI, in
+    degC/decade^2 (its p-value is identical to a's, since acceleration is
+    just 2a - doubling a coefficient doesn't change its significance).
 
     This is a purely empirical curvature test, per the assignment brief -
     it does not assume temperature is physically expected to be quadratic.
@@ -88,30 +94,39 @@ def fit_quadratic_trend(annual: pd.Series, start_year: int, end_year: int) -> di
     t = (window.index.to_numpy(dtype=float) - start_year) / 10.0
     y = window.to_numpy(dtype=float)
     n = len(t)
+    dof = n - 3
 
     # np.polyfit(..., cov=True) gives both the coefficients (highest power
-    # first: c, b, a) and their covariance matrix from the same OLS fit.
-    coeffs, cov = np.polyfit(t, y, deg=2, cov=True)
-    c = coeffs[0]
-    c_stderr = np.sqrt(cov[0, 0])
+    # first: a, b, c for a*t^2 + b*t + c) and their covariance matrix from
+    # the same OLS fit - the coefficient variances are its diagonal.
+    (a, b, c), cov = np.polyfit(t, y, deg=2, cov=True)
+    a_stderr, b_stderr, c_stderr = np.sqrt(np.diag(cov))
 
-    dof = n - 3
+    def p_value(coef: float, stderr: float) -> float:
+        return 2 * stats.t.sf(np.abs(coef / stderr), df=dof)
+
     t_crit = stats.t.ppf(0.975, df=dof)
 
-    fitted = np.polyval(coeffs, t)
+    fitted = a * t ** 2 + b * t + c
     ss_res = np.sum((y - fitted) ** 2)
     ss_tot = np.sum((y - y.mean()) ** 2)
 
     def predict(years):
         tt = (np.asarray(years, dtype=float) - start_year) / 10.0
-        return np.polyval(coeffs, tt)
+        return a * tt ** 2 + b * tt + c
 
     return {
         "start_year": int(window.index.min()),
         "end_year": int(window.index.max()),
         "n_years": n,
-        "acceleration_degC_per_decade2": 2 * c,
-        "acceleration_ci95_degC_per_decade2": 2 * t_crit * c_stderr,
+        "dof": dof,
+        # anomaly(t) = a*t^2 + b*t + c, t in decades since start_year
+        "a": a, "a_stderr": a_stderr, "a_pvalue": p_value(a, a_stderr),
+        "b": b, "b_stderr": b_stderr, "b_pvalue": p_value(b, b_stderr),
+        "c": c, "c_stderr": c_stderr, "c_pvalue": p_value(c, c_stderr),
+        "acceleration_degC_per_decade2": 2 * a,
+        "acceleration_ci95_degC_per_decade2": 2 * t_crit * a_stderr,
+        "acceleration_pvalue": p_value(a, a_stderr),
         "r_squared": 1 - ss_res / ss_tot,
         "predict": predict,
     }
