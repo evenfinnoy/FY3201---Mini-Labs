@@ -11,6 +11,10 @@ To plot a different place: change FOLDER below to that place's folder
 (e.g. FOLDER = Path(__file__).resolve().parent / "Bergen") - no other code
 needs to change, as long as the folder holds the same kind of seklima.met.no
 export. Figures are saved as PNGs into <FOLDER>/plots/.
+
+To ignore older data (e.g. only look at the last 25 years): set START_YEAR
+below to that first year to include; every plot is then built only from
+START_YEAR onward. Leave it as None to use the full record.
 """
 
 from pathlib import Path
@@ -19,10 +23,16 @@ import matplotlib.pyplot as plt
 
 import climate_plots as cp
 from climate_common import discover_place_files, find_column, load_seklima_csv
+from climate_stats import compare_year_to_normal
 
 FOLDER = Path(__file__).resolve().parent / "Oslo"
 REFERENCE_YEARS = (1991, 2020)
 CURRENT_YEAR = 2025
+# Drop everything before this year, e.g. START_YEAR = 2000, so every plot
+# (climate normals, box plots, gamma fits, trend lines, ...) is built only
+# from more recent data - useful for judging how "newer changes" compare
+# without the full historical record diluting them. None keeps all years.
+START_YEAR = 1991
 SHOW = True
 SAVE = True
 
@@ -36,6 +46,8 @@ def main():
     figures = []
     for path in files:
         df, cols = load_seklima_csv(path)
+        if START_YEAR is not None:
+            df = df[df["year"] >= START_YEAR].reset_index(drop=True)
         source_note = f"Source: MET Norway (seklima.met.no), {path.name}. CC BY 4.0."
 
         max_col = find_column(cols, "maksimumstemperatur")
@@ -62,20 +74,47 @@ def main():
         if precip_col:
             fig, _ = cp.plot_precip_monthly_climatology(
                 df, precip_col, place,
+                reference_years=REFERENCE_YEARS,
                 highlight_years=[CURRENT_YEAR, CURRENT_YEAR + 1],
                 source_note=source_note,
             )
             figures.append(("precip_monthly_climatology", fig))
             fig, _ = cp.plot_precip_annual_trend(df, precip_col, place, source_note=source_note)
             figures.append(("precip_annual_trend", fig))
+            fig, _ = cp.plot_precip_cumulative_trend(df, precip_col, place, source_note=source_note)
+            figures.append(("precip_cumulative_trend", fig))
+            fig, _ = cp.plot_precip_cumulative_spaghetti(
+                df, precip_col, place,
+                highlight_years=[CURRENT_YEAR, CURRENT_YEAR + 1],
+                source_note=source_note,
+            )
+            figures.append(("precip_cumulative_spaghetti", fig))
+            fig, _ = cp.plot_precip_monthly_trend_grid(df, precip_col, place, source_note=source_note)
+            figures.append(("precip_monthly_trend_grid", fig))
             fig, _ = cp.plot_precip_daily_gamma_fit(df, precip_col, place, source_note=source_note)
             figures.append(("precip_daily_gamma_fit", fig))
             fig, _ = cp.plot_precip_monthly_gamma_fit(df, precip_col, place, source_note=source_note)
             figures.append(("precip_monthly_gamma_fit", fig))
 
+            compare_year_to_normal(
+                df, precip_col, reference_years=REFERENCE_YEARS, test_year=CURRENT_YEAR,
+                label=f"{place} daily precipitation", unit=" mm",
+            )
+            fig, _ = cp.plot_precip_ecdf_2025_vs_normal(
+                df, precip_col, place,
+                reference_years=REFERENCE_YEARS, test_year=CURRENT_YEAR,
+                source_note=source_note,
+            )
+            figures.append(("precip_ecdf_2025_vs_normal", fig))
+
         pressure_col = find_column(cols, "lufttrykk")
         if pressure_col:
-            fig, _ = cp.plot_pressure_monthly_boxplot(df, pressure_col, place, source_note=source_note)
+            fig, _ = cp.plot_pressure_monthly_boxplot(
+                df, pressure_col, place,
+                reference_years=REFERENCE_YEARS,
+                highlight_years=[CURRENT_YEAR, CURRENT_YEAR + 1],
+                source_note=source_note,
+            )
             figures.append(("pressure_monthly_boxplot", fig))
             fig, _ = cp.plot_pressure_annual_trend(df, pressure_col, place, source_note=source_note)
             figures.append(("pressure_annual_trend", fig))
