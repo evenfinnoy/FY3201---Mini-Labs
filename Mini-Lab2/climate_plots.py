@@ -116,82 +116,6 @@ def plot_temperature_vs_normal(
     return fig, ax
 
 
-def plot_temperature_daily_spaghetti(
-    df, mean_col, place, baseline_years=(1991, 2020), highlight_years=None,
-    smooth_window=7, source_note="",
-):
-    """Part 1 (extra): one line per year of daily mean-temperature anomaly
-    against a smoothed day-of-year climatology, coloured by decade and with
-    the most recent years picked out - in the style of Carbon Brief's
-    "Monthly global temperature" chart, but at daily instead of monthly
-    resolution. Each year's daily series is itself lightly smoothed
-    (smooth_window days) since raw day-to-day weather noise at a single
-    station is far larger than at the monthly/global scale and would
-    otherwise swamp the seasonal signal."""
-    d = df.dropna(subset=[mean_col])
-    ref, used_years = _reference_period(d, baseline_years)
-    clim = _smooth_doy(ref.groupby("doy")[mean_col].mean())
-
-    daily = d[["year", "doy", mean_col]].copy()
-    daily["anomaly"] = daily[mean_col] - daily["doy"].map(clim)
-
-    years = sorted(daily["year"].unique())
-    if highlight_years is None:
-        highlight_years = years[-1:]
-    highlight_years = [y for y in highlight_years if y in years]
-
-    decades = sorted({(y // 10) * 10 for y in years})
-    cmap = plt.get_cmap("coolwarm")
-    norm = plt.Normalize(vmin=decades[0], vmax=decades[-1] + 9)
-
-    def smoothed_year(year):
-        # groupby (not set_index) because leap-year day 366 was folded onto
-        # day 365 in "doy", so that day can have two rows for one year.
-        series = daily.loc[daily["year"] == year].groupby("doy")["anomaly"].mean()
-        series = series.reindex(range(1, 366))
-        return series.rolling(smooth_window, center=True, min_periods=1).mean()
-
-    fig, ax = plt.subplots(figsize=(11, 6.5), constrained_layout=True)
-    _shade_months(ax)
-
-    for year in years:
-        if year in highlight_years:
-            continue
-        ys = smoothed_year(year)
-        ax.plot(ys.index, ys.values, color=cmap(norm((year // 10) * 10)),
-                alpha=0.5, linewidth=0.7, zorder=2)
-
-    highlight_colors = plt.cm.Reds(np.linspace(0.55, 0.95, len(highlight_years)))
-    for color, year in zip(highlight_colors, sorted(highlight_years)):
-        ys = smoothed_year(year)
-        ax.plot(ys.index, ys.values, color=color, linewidth=2.0, zorder=5)
-        valid = ys.dropna()
-        if not valid.empty:
-            ax.annotate(str(year), xy=(valid.index[-1], valid.iloc[-1]), xytext=(5, 0),
-                        textcoords="offset points", color=color, fontsize=9,
-                        fontweight="bold", va="center")
-
-    ax.axhline(0, color="grey", linewidth=0.8, linestyle="--", zorder=1)
-    ax.set_xlim(1, 380)
-    ax.set_xlabel("Day of year")
-    ax.set_ylabel(
-        f"Temperature anomaly (°C, {smooth_window}-day smoothed, "
-        f"vs. {used_years[0]}–{used_years[1]} normal)"
-    )
-    ax.set_title(
-        f"{place}: daily temperature anomaly, one line per year ({years[0]}–{years[-1]})",
-        loc="left", fontsize=13, fontweight="bold",
-    )
-    ax.grid(alpha=0.2)
-
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax, pad=0.01, aspect=30, label="Decade")
-
-    _caption(fig, source_note)
-    return fig, ax
-
-
 def plot_precip_monthly_climatology(
     df, precip_col, place, reference_years=(1991, 2020), highlight_years=None, source_note="",
 ):
@@ -285,103 +209,62 @@ def plot_precip_monthly_climatology(
     return fig, ax
 
 
-def plot_precip_annual_trend(df, precip_col, place, source_note=""):
-    """Part 2: annual total precipitation over time, with a linear trend,
-    to show whether precipitation has increased."""
-    counts = df.groupby("year")[precip_col].count()
-    complete_years = counts[counts >= 300].index
-    annual = df[df["year"].isin(complete_years)].groupby("year")[precip_col].sum()
-
-    fig, ax = plt.subplots(figsize=(10, 5.5), constrained_layout=True)
-    ax.bar(annual.index, annual.values, color="tab:blue", alpha=0.6, label="Annual total")
-
-    slope, intercept = np.polyfit(annual.index, annual.values, 1)
-    trend = slope * annual.index + intercept
-    ax.plot(annual.index, trend, color="black", linewidth=1.6, linestyle="--",
-            label=f"Trend: {slope * 10:+.1f} mm/decade")
-
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Annual precipitation (mm)")
-    ax.set_title(f"{place}: annual precipitation over time", loc="left", fontsize=13, fontweight="bold")
-    ax.legend(loc="upper left", fontsize=9, frameon=False)
-    ax.grid(alpha=0.2, axis="y")
-    _caption(fig, source_note + (" Years with fewer than 300 observed days are excluded."
-                                  if source_note else ""))
-    return fig, ax
-
-
 def plot_precip_cumulative_trend(df, precip_col, place, smooth_years=10, poly_degree=2, source_note=""):
     """Part 2: has precipitation increased over time? A single straight
-    trend line through noisy annual bars (plot_precip_annual_trend) is
-    easy to eyeball as "barely there" even when a real multi-year trend
-    exists, because year-to-year variability is so much larger than the
-    trend itself. Three more robust, standard views instead:
-    (top) annual totals with a smooth_years-year centered moving average
-    (a data-driven local smoother) and a degree-poly_degree polynomial fit
-    via np.polyfit/np.polyval (a single smooth curve over the whole
-    period, so it doesn't depend on choosing a window length) overlaid -
-    both make a real multi-year rise or fall easier to see than the bars
-    alone;
-    (bottom) the cumulative anomaly ("mass curve") of each year's total
-    relative to the long-term mean, a standard hydrological technique -
-    a sustained upward slope (rather than wandering flat/random-walk-like)
-    is itself the signature of a real long-term increase, and any change
-    in slope marks roughly when a shift happened."""
+    trend line through noisy annual bars is easy to eyeball as "barely
+    there" even when a real multi-year trend exists, because year-to-year
+    variability is so much larger than the trend itself. Two more robust,
+    standard views overlaid on the annual totals instead: a
+    smooth_years-year centered moving average (a data-driven local
+    smoother) and a degree-poly_degree polynomial fit via
+    np.polyfit/np.polyval (a single smooth curve over the whole period, so
+    it doesn't depend on choosing a window length) - both make a real
+    multi-year rise or fall easier to see than the bars alone."""
     counts = df.groupby("year")[precip_col].count()
     complete_years = counts[counts >= 300].index
     annual = df[df["year"].isin(complete_years)].groupby("year")[precip_col].sum(min_count=1).dropna()
 
     mean_annual = annual.mean()
     rolling = annual.rolling(smooth_years, center=True, min_periods=max(3, smooth_years // 2)).mean()
-    cum_anomaly = (annual - mean_annual).cumsum()
 
     slope, _ = np.polyfit(annual.index, annual.values, 1)
     poly_coeffs = np.polyfit(annual.index, annual.values, poly_degree)
     x_smooth = np.linspace(annual.index.min(), annual.index.max(), 200)
     poly_curve = np.polyval(poly_coeffs, x_smooth)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10.5, 9), sharex=True, constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(10.5, 5.5), constrained_layout=True)
 
-    ax1.bar(annual.index, annual.values, color="tab:blue", alpha=0.45, label="Annual total")
-    ax1.plot(rolling.index, rolling.values, color="black", linewidth=2.2,
-              label=f"{smooth_years}-year moving average")
-    ax1.plot(x_smooth, poly_curve, color="tab:orange", linewidth=2.4, linestyle="-.",
-              label=f"Degree-{poly_degree} polynomial fit")
-    ax1.axhline(mean_annual, color="0.4", linewidth=1, linestyle=":",
-                label=f"Long-term mean ({mean_annual:.0f} mm)")
-    ax1.set_ylabel("Annual precipitation (mm)")
-    ax1.set_title(f"{place}: has annual precipitation increased over time?", loc="left",
-                  fontsize=13, fontweight="bold")
-    ax1.legend(loc="upper left", fontsize=9, frameon=False)
-    ax1.grid(alpha=0.2, axis="y")
-
-    ax2.fill_between(cum_anomaly.index, cum_anomaly.values, 0, color="tab:blue", alpha=0.25)
-    ax2.plot(cum_anomaly.index, cum_anomaly.values, color="black", linewidth=1.8)
-    ax2.axhline(0, color="0.4", linewidth=1, linestyle=":")
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Cumulative anomaly (mm)")
-    ax2.set_title("Cumulative departure from the long-term mean (“mass curve”)",
-                  loc="left", fontsize=11, fontweight="bold")
-    ax2.grid(alpha=0.2)
+    ax.bar(annual.index, annual.values, color="tab:blue", alpha=0.45, label="Annual total")
+    ax.plot(rolling.index, rolling.values, color="black", linewidth=2.2,
+            label=f"{smooth_years}-year moving average")
+    ax.plot(x_smooth, poly_curve, color="tab:orange", linewidth=2.4, linestyle="-.",
+            label=f"Degree-{poly_degree} polynomial fit")
+    ax.axhline(mean_annual, color="0.4", linewidth=1, linestyle=":",
+               label=f"Long-term mean ({mean_annual:.0f} mm)")
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Annual precipitation (mm)")
+    ax.set_title(f"{place}: has annual precipitation increased over time?", loc="left",
+                 fontsize=13, fontweight="bold")
+    ax.legend(loc="upper left", fontsize=9, frameon=False)
+    ax.grid(alpha=0.2, axis="y")
 
     _caption(fig, source_note + (
         f" Only years with ≥300 observed days are included (n={len(annual)}). Overall linear "
         f"trend across the full period: {slope * 10:+.1f} mm/decade (the polynomial fit is for "
-        "shape, not a trend rate - its curvature isn't a constant mm/decade). In the mass curve, "
-        "a rising slope means a run of wetter-than-average years, a falling slope drier."
+        "shape, not a trend rate - its curvature isn't a constant mm/decade)."
     ))
-    return fig, (ax1, ax2)
+    return fig, ax
 
 
 def plot_precip_cumulative_spaghetti(df, precip_col, place, highlight_years=None, source_note=""):
     """Part 2 (extra): one line per year of cumulative precipitation
-    through the year (day-of-year on the x-axis), coloured by decade - the
-    precipitation analogue of plot_temperature_daily_spaghetti. Raw daily
-    precipitation is too spiky (individual rain events, mostly zero) to
-    compare year to year as a spaghetti plot the way temperature can; its
-    running cumulative total is instead a smooth, monotonically increasing
-    curve, so "is this year running wetter or drier than usual, and by how
-    much" is readable at a glance at any point in the year, and each
+    through the year (day-of-year on the x-axis), coloured by decade, in
+    the style of Carbon Brief's "Monthly global temperature" chart. Raw
+    daily precipitation is too spiky (individual rain events, mostly zero)
+    to compare year to year as a spaghetti plot directly; its running
+    cumulative total is instead a smooth, monotonically increasing curve,
+    so "is this year running wetter or drier than usual, and by how much"
+    is readable at a glance at any point in the year, and each
     line's endpoint is that year's annual total."""
     d = df.dropna(subset=[precip_col])
     years = sorted(d["year"].unique())
@@ -581,70 +464,47 @@ def plot_precip_monthly_gamma_fit(df, precip_col, place, reference_years=None, s
     return fig, axes
 
 
-def plot_precip_ecdf_2025_vs_normal(
-    df, precip_col, place, reference_years=(1991, 2020), test_year=2025,
-    min_value=None, source_note="",
+def plot_pressure_vs_normal(
+    df, place, pressure_col, reference_years=(1991, 2020), current_year=2025, source_note="",
 ):
-    """Visual companion to climate_stats.compare_year_to_normal: empirical
-    CDFs of daily precipitation for the reference period vs. test_year,
-    with the point of largest vertical gap between the two curves marked -
-    that gap is exactly the two-sample Kolmogorov-Smirnov statistic D the
-    test is built on, so this plot shows what the test number means rather
-    than just reporting it."""
-    ref = np.sort(df.loc[df["year"].between(*reference_years), precip_col].dropna().values)
-    year = np.sort(df.loc[df["year"] == test_year, precip_col].dropna().values)
-    if min_value is not None:
-        ref, year = ref[ref > min_value], year[year > min_value]
+    """Part 3a: the section's actual framing question is "is this pressure
+    normal for X?" - plot_pressure_monthly_boxplot answers "explore
+    variations during a month" and plot_pressure_annual_trend answers "has
+    it changed over time", but neither directly shows a specific day's
+    pressure against what's typical for that time of year. This mirrors
+    plot_temperature_vs_normal for Part 1: a smoothed 10th-90th percentile
+    "typical" day-of-year band (plus the mean) over the reference period,
+    with the given year's actual daily pressure overlaid."""
+    ref, used_years = _reference_period(df, reference_years)
+    cur = df[df["year"] == current_year]
 
-    ks_stat, ks_p = stats.ks_2samp(ref, year)
+    g = ref.groupby("doy")[pressure_col]
+    mean = _smooth_doy(g.mean())
+    p10 = _smooth_doy(g.quantile(0.10))
+    p90 = _smooth_doy(g.quantile(0.90))
 
-    grid = np.union1d(ref, year)
-    ref_cdf = np.searchsorted(ref, grid, side="right") / len(ref) * 100
-    year_cdf = np.searchsorted(year, grid, side="right") / len(year) * 100
-    i_max = np.argmax(np.abs(ref_cdf - year_cdf))
-    xlim = (0, np.quantile(ref, 0.99))
+    fig, ax = plt.subplots(figsize=(11, 6), constrained_layout=True)
+    _shade_months(ax)
 
-    fig, ax = plt.subplots(figsize=(9.5, 6), constrained_layout=True)
+    ax.fill_between(p10.index, p10, p90, color="tab:purple", alpha=0.20,
+                     label=f"Typical range (10th–90th pct.), {used_years[0]}–{used_years[1]}")
+    ax.plot(mean.index, mean, color="tab:purple", alpha=0.8, linewidth=1.4,
+            linestyle="--", label="Normal daily pressure")
 
-    # shade the gap between the two curves everywhere (not just at the
-    # max), so the overall pattern of divergence reads at a glance
-    ax.fill_between(grid, ref_cdf, year_cdf, step="post", color="0.55",
-                     alpha=0.25, zorder=1, label="Gap between distributions")
+    if not cur.empty:
+        ax.plot(cur["doy"], cur[pressure_col], color="black", linewidth=1.2,
+                label=f"{current_year} daily pressure")
 
-    ax.step(ref, np.arange(1, len(ref) + 1) / len(ref) * 100, where="post",
-            color="tab:blue", linewidth=2.2, zorder=3,
-            label=f"{reference_years[0]}–{reference_years[1]} normal (n={len(ref):,})")
-    ax.step(year, np.arange(1, len(year) + 1) / len(year) * 100, where="post",
-            color="tab:red", linewidth=2.4, zorder=4, label=f"{test_year} (n={len(year):,})")
-
-    # a visible double-headed arrow + label at the point of maximum gap,
-    # rather than a near-invisible vline when D is small
-    x0 = grid[i_max]
-    y_lo, y_hi = sorted((ref_cdf[i_max], year_cdf[i_max]))
-    ax.annotate("", xy=(x0, y_hi), xytext=(x0, y_lo),
-                arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.6), zorder=6)
-    ax.annotate(
-        f"KS D = {ks_stat:.3f}",
-        xy=(x0, (y_lo + y_hi) / 2), xycoords="data",
-        xytext=(12, 0), textcoords="offset points",
-        fontsize=9.5, fontweight="bold", va="center", zorder=6,
+    ax.set_xlim(1, 365)
+    ax.set_xlabel("Day of year")
+    ax.set_ylabel("Mean sea-level pressure (hPa)")
+    ax.set_title(
+        f"{place}: {current_year} pressure vs. pressure normal ({used_years[0]}–{used_years[1]} normal)",
+        loc="left", fontsize=13, fontweight="bold",
     )
-
-    xlabel = "Daily precipitation (mm)" if min_value is None else f"Daily precipitation, > {min_value:g} mm (mm)"
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Cumulative probability (%)")
-    ax.set_xlim(*xlim)
-    ax.set_ylim(0, 100)
-    ax.set_title(f"{place}: is {test_year} precipitation normal? (empirical CDF)",
-                 loc="left", fontsize=13, fontweight="bold")
-    ax.legend(loc="lower right", fontsize=9, frameon=False)
+    ax.legend(loc="upper left", fontsize=9, frameon=False)
     ax.grid(alpha=0.2)
-
-    verdict = "reject" if ks_p < 0.05 else "fail to reject"
-    _caption(fig, source_note + (
-        f" Two-sample Kolmogorov–Smirnov test: D={ks_stat:.3f}, p={ks_p:.3g} "
-        f"({verdict} “same distribution” at α=0.05)."
-    ))
+    _caption(fig, source_note)
     return fig, ax
 
 
@@ -656,21 +516,19 @@ def plot_pressure_monthly_boxplot(
     period's daily values; whiskers extend to the true min/max observed in
     that same period (not the usual 1.5x IQR Tukey rule) so anything
     sitting outside the whiskers is genuinely outside the historical
-    baseline, not just a statistical outlier definition. On top, every
-    year's mean for that month (not just the reference period) is plotted
-    as a dot coloured by year, so a long-term drift (Part 3a also asks
-    whether pressure has changed over time) is visible without changing
-    what the box itself represents.
-    highlight_years (e.g. [2025, 2026]) are drawn as distinct outlined
-    markers, same convention as plot_precip_monthly_climatology, including
-    years outside the reference period itself; a year's most recent month
-    is drawn hollow if it's still in progress (<90% of its days observed)."""
+    baseline, not just a statistical outlier definition.
+    highlight_years (e.g. [2025, 2026]) have their own individual daily
+    values scattered on top, at the same day-level resolution as the box
+    itself - a single monthly-mean marker per year would (correctly) never
+    reach the whisker tips, since a month's mean is always less extreme
+    than its most extreme day, which made the whiskers look like they had
+    no data behind them. Plotting actual days instead keeps everything on
+    one scale and lets a highlighted year's own extremes show up directly."""
     d = df.dropna(subset=[pressure_col])
     ref, used_years = _reference_period(d, reference_years)
     data_by_month = [ref.loc[ref["month"] == m, pressure_col].values for m in range(1, 13)]
 
-    monthly_means = d.groupby(["year", "month"])[pressure_col].agg(mean="mean", n_days="count").reset_index()
-    highlight_years = [y for y in (highlight_years or []) if y in monthly_means["year"].unique()]
+    highlight_years = [y for y in (highlight_years or []) if y in d["year"].unique()]
 
     fig, ax = plt.subplots(figsize=(10.5, 5.5), constrained_layout=True)
     ax.boxplot(data_by_month, tick_labels=MONTH_LABELS, whis=(0, 100), patch_artist=True,
@@ -682,28 +540,14 @@ def plot_pressure_monthly_boxplot(
                                markersize=7, markeredgewidth=1.3),
                zorder=3)
 
-    background = monthly_means[~monthly_means["year"].isin(highlight_years)]
-    cmap = plt.get_cmap("coolwarm")
-    norm = plt.Normalize(vmin=monthly_means["year"].min(), vmax=monthly_means["year"].max())
-    rng = np.random.default_rng(0)
-    jitter = rng.uniform(-0.15, 0.15, size=len(background))
-    ax.scatter(background["month"] + jitter, background["mean"],
-               c=background["year"], cmap=cmap, norm=norm,
-               alpha=0.6, s=14, linewidths=0, zorder=2)
-
-    marker_styles = ["D", "^", "s", "o"]
+    marker_styles = ["o", "^", "s", "D"]
     highlight_colors = ["black", "tab:green", "tab:orange", "tab:cyan"]
+    rng = np.random.default_rng(0)
     for color, marker, year in zip(highlight_colors, marker_styles, sorted(highlight_years)):
-        sub = monthly_means[monthly_means["year"] == year].copy()
-        sub["complete"] = sub.apply(
-            lambda r: r["n_days"] >= 0.9 * calendar.monthrange(year, int(r["month"]))[1], axis=1)
-        full, partial = sub[sub["complete"]], sub[~sub["complete"]]
-        ax.scatter(full["month"], full["mean"], color=color, marker=marker, s=65,
-                   edgecolor="white", linewidths=0.8, zorder=5, label=str(year))
-        if not partial.empty:
-            ax.scatter(partial["month"], partial["mean"], facecolor="none", edgecolor=color,
-                       marker=marker, s=65, linewidths=1.6, zorder=5,
-                       label=f"{year} (month in progress)")
+        sub = d[d["year"] == year]
+        jitter = rng.uniform(-0.15, 0.15, size=len(sub))
+        ax.scatter(sub["month"] + jitter, sub[pressure_col], color=color, marker=marker,
+                   s=16, alpha=0.75, linewidths=0, zorder=4, label=f"{year} daily values")
 
     ax.set_ylabel("Mean sea-level pressure (hPa)")
     ax.set_title(f"{place}: pressure variation within a month", loc="left", fontsize=13, fontweight="bold")
@@ -720,52 +564,50 @@ def plot_pressure_monthly_boxplot(
     ax.legend(handles=box_handles + handles, loc="upper left", fontsize=8, frameon=False, ncol=2)
     ax.grid(alpha=0.2, axis="y")
 
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax, pad=0.01, aspect=30, label="Year")
-
     _caption(fig, source_note + (
-        f" Box/whiskers built from the {ref_label} reference period only; dots = every year's "
-        "mean pressure for that month, coloured by year."
+        f" Box/whiskers built from every daily value in the {ref_label} reference period; "
+        "highlighted years' points are their own individual days, at that same resolution."
     ))
     return fig, ax
 
 
-def plot_pressure_annual_trend(df, pressure_col, place, source_note=""):
-    """Part 3a: whether mean pressure has changed over time."""
+def plot_pressure_annual_trend(df, pressure_col, place, smooth_years=10, poly_degree=2, source_note=""):
+    """Part 3a: has pressure changed over time? A single straight trend
+    line through noisy annual means is easy to eyeball as "no trend" even
+    when a real one exists, since year-to-year variability swamps a slow
+    drift - the same issue precipitation had (see
+    plot_precip_cumulative_trend). Two more robust, standard views
+    overlaid on the annual means instead: a smooth_years-year centered
+    moving average (a data-driven local smoother) and a degree-poly_degree
+    polynomial fit via np.polyfit/np.polyval (a single smooth curve over
+    the whole period, not tied to a window length)."""
     annual = df.groupby("year")[pressure_col].mean().dropna()
 
-    fig, ax = plt.subplots(figsize=(10, 5.5), constrained_layout=True)
-    ax.plot(annual.index, annual.values, marker="o", ms=3, linewidth=1,
-            color="tab:purple", label="Annual mean pressure")
+    mean_all = annual.mean()
+    rolling = annual.rolling(smooth_years, center=True, min_periods=max(3, smooth_years // 2)).mean()
 
-    slope, intercept = np.polyfit(annual.index, annual.values, 1)
-    trend = slope * annual.index + intercept
-    ax.plot(annual.index, trend, color="black", linewidth=1.6, linestyle="--",
-            label=f"Trend: {slope * 10:+.2f} hPa/decade")
+    slope, _ = np.polyfit(annual.index, annual.values, 1)
+    poly_coeffs = np.polyfit(annual.index, annual.values, poly_degree)
+    x_smooth = np.linspace(annual.index.min(), annual.index.max(), 200)
+    poly_curve = np.polyval(poly_coeffs, x_smooth)
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.5), constrained_layout=True)
+    ax.plot(annual.index, annual.values, marker="o", ms=3, linewidth=1,
+            color="tab:purple", alpha=0.5, label="Annual mean pressure")
+    ax.plot(rolling.index, rolling.values, color="black", linewidth=2.2,
+            label=f"{smooth_years}-year moving average")
+    ax.plot(x_smooth, poly_curve, color="tab:orange", linewidth=2.2, linestyle="-.",
+            label=f"Degree-{poly_degree} polynomial fit")
+    ax.axhline(mean_all, color="0.4", linewidth=1, linestyle=":",
+               label=f"Long-term mean ({mean_all:.1f} hPa)")
 
     ax.set_xlabel("Year")
     ax.set_ylabel("Mean sea-level pressure (hPa)")
-    ax.set_title(f"{place}: annual mean pressure over time", loc="left", fontsize=13, fontweight="bold")
+    ax.set_title(f"{place}: has pressure changed over time?", loc="left", fontsize=13, fontweight="bold")
     ax.legend(loc="upper left", fontsize=9, frameon=False)
     ax.grid(alpha=0.2)
-    _caption(fig, source_note)
-    return fig, ax
-
-
-def plot_wind_monthly_climatology(df, wind_col, place, source_note=""):
-    """Part 3b: normal monthly wind, to show which months are windier/calmer."""
-    d = df.dropna(subset=[wind_col])
-    stats = d.groupby("month")[wind_col].agg(mean="mean", std="std").reindex(range(1, 13))
-
-    fig, ax = plt.subplots(figsize=(10, 5.5), constrained_layout=True)
-    ax.bar(stats.index, stats["mean"], yerr=stats["std"].fillna(0), capsize=3,
-           color="tab:green", alpha=0.75, label="Mean daily wind ± 1 std (inter-annual)")
-    ax.set_xticks(range(1, 13))
-    ax.set_xticklabels(MONTH_LABELS)
-    ax.set_ylabel("Wind speed (m/s)")
-    ax.set_title(f"{place}: normal monthly wind", loc="left", fontsize=13, fontweight="bold")
-    ax.legend(loc="upper left", fontsize=9, frameon=False)
-    ax.grid(alpha=0.2, axis="y")
-    _caption(fig, source_note)
+    _caption(fig, source_note + (
+        f" Overall linear trend across the full period: {slope * 10:+.2f} hPa/decade "
+        "(the polynomial fit is for shape, not a trend rate)."
+    ))
     return fig, ax

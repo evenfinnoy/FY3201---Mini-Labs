@@ -4,8 +4,13 @@ Generic climate plotter for Mini-project 2.
 Point FOLDER at a place's data folder (e.g. Oslo/, holding the CSVs
 exported from seklima.met.no) and run this file. It discovers every CSV in
 that folder, works out which physical quantities each one contains by
-looking at the Norwegian column headers (not the filename), and draws
-whichever of the temperature / precipitation / pressure / wind plots apply.
+looking at the Norwegian column headers (not the filename), and draws the
+temperature / precipitation / pressure plots for Mini-project 2 Parts 1-3a.
+
+Part 3 asks you to choose EITHER pressure OR wind - this driver currently
+only calls the pressure plots. To use wind instead, add a wind_col block
+calling cp.plot_wind_monthly_climatology (see git history for the removed
+version) and drop the pressure_col block.
 
 To plot a different place: change FOLDER below to that place's folder
 (e.g. FOLDER = Path(__file__).resolve().parent / "Bergen") - no other code
@@ -23,7 +28,6 @@ import matplotlib.pyplot as plt
 
 import climate_plots as cp
 from climate_common import discover_place_files, find_column, load_seklima_csv
-from climate_stats import compare_year_to_normal
 
 FOLDER = Path(__file__).resolve().parent / "Oslo"
 REFERENCE_YEARS = (1991, 2020)
@@ -32,7 +36,7 @@ CURRENT_YEAR = 2025
 # (climate normals, box plots, gamma fits, trend lines, ...) is built only
 # from more recent data - useful for judging how "newer changes" compare
 # without the full historical record diluting them. None keeps all years.
-START_YEAR = 1991
+START_YEAR = 1990
 SHOW = True
 SAVE = True
 
@@ -60,16 +64,6 @@ def main():
             )
             figures.append(("temperature_vs_normal", fig))
 
-        mean_col = find_column(cols, "middeltemperatur")
-        if mean_col:
-            highlight_years = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2]
-            fig, _ = cp.plot_temperature_daily_spaghetti(
-                df, mean_col, place,
-                baseline_years=REFERENCE_YEARS, highlight_years=highlight_years,
-                source_note=source_note,
-            )
-            figures.append(("temperature_daily_spaghetti", fig))
-
         precip_col = find_column(cols, "nedbør")
         if precip_col:
             fig, _ = cp.plot_precip_monthly_climatology(
@@ -79,8 +73,6 @@ def main():
                 source_note=source_note,
             )
             figures.append(("precip_monthly_climatology", fig))
-            fig, _ = cp.plot_precip_annual_trend(df, precip_col, place, source_note=source_note)
-            figures.append(("precip_annual_trend", fig))
             fig, _ = cp.plot_precip_cumulative_trend(df, precip_col, place, source_note=source_note)
             figures.append(("precip_cumulative_trend", fig))
             fig, _ = cp.plot_precip_cumulative_spaghetti(
@@ -96,19 +88,14 @@ def main():
             fig, _ = cp.plot_precip_monthly_gamma_fit(df, precip_col, place, source_note=source_note)
             figures.append(("precip_monthly_gamma_fit", fig))
 
-            compare_year_to_normal(
-                df, precip_col, reference_years=REFERENCE_YEARS, test_year=CURRENT_YEAR,
-                label=f"{place} daily precipitation", unit=" mm",
-            )
-            fig, _ = cp.plot_precip_ecdf_2025_vs_normal(
-                df, precip_col, place,
-                reference_years=REFERENCE_YEARS, test_year=CURRENT_YEAR,
-                source_note=source_note,
-            )
-            figures.append(("precip_ecdf_2025_vs_normal", fig))
-
         pressure_col = find_column(cols, "lufttrykk")
         if pressure_col:
+            fig, _ = cp.plot_pressure_vs_normal(
+                df, place, pressure_col,
+                reference_years=REFERENCE_YEARS, current_year=CURRENT_YEAR,
+                source_note=source_note,
+            )
+            figures.append(("pressure_vs_normal", fig))
             fig, _ = cp.plot_pressure_monthly_boxplot(
                 df, pressure_col, place,
                 reference_years=REFERENCE_YEARS,
@@ -118,11 +105,6 @@ def main():
             figures.append(("pressure_monthly_boxplot", fig))
             fig, _ = cp.plot_pressure_annual_trend(df, pressure_col, place, source_note=source_note)
             figures.append(("pressure_annual_trend", fig))
-
-        wind_col = find_column(cols, "middelvind") or find_column(cols, "vind")
-        if wind_col:
-            fig, _ = cp.plot_wind_monthly_climatology(df, wind_col, place, source_note=source_note)
-            figures.append(("wind_monthly_climatology", fig))
 
     if not figures:
         raise SystemExit(f"Found {len(files)} CSV(s) in {FOLDER} but none matched a known column type.")
