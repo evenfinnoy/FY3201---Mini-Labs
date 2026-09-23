@@ -96,12 +96,7 @@ def main():
                 source_note=source_note,
             )
             figures.append(("pressure_vs_normal", fig))
-            fig, _ = cp.plot_pressure_monthly_boxplot(
-                df, pressure_col, place,
-                reference_years=REFERENCE_YEARS,
-                highlight_years=[CURRENT_YEAR, CURRENT_YEAR + 1],
-                source_note=source_note,
-            )
+            fig, _ = cp.plot_pressure_monthly_boxplot(df, pressure_col, place, source_note=source_note)
             figures.append(("pressure_monthly_boxplot", fig))
             fig, _ = cp.plot_pressure_annual_trend(df, pressure_col, place, source_note=source_note)
             figures.append(("pressure_annual_trend", fig))

@@ -31,6 +31,14 @@ def _shade_months(ax, color="0.90"):
                    color=color, zorder=0, linewidth=0)
 
 
+def _add_top_margin(ax, frac=0.12):
+    """Push the y-axis top up by frac of the current data range, so an
+    "upper left"/"upper right" legend has clear air above the plotted
+    lines/points instead of sitting on top of them."""
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom, top + frac * (top - bottom))
+
+
 def _caption(fig, source_note: str):
     if source_note:
         fig.text(0.01, -0.04, source_note, fontsize=8, ha="left", va="top", wrap=True)
@@ -112,6 +120,7 @@ def plot_temperature_vs_normal(
     )
     ax.legend(loc="upper left", fontsize=8, frameon=False, ncol=2)
     ax.grid(alpha=0.2)
+    _add_top_margin(ax, frac=0.06)
     _caption(fig, source_note)
     return fig, ax
 
@@ -499,36 +508,31 @@ def plot_pressure_vs_normal(
     ax.set_xlabel("Day of year")
     ax.set_ylabel("Mean sea-level pressure (hPa)")
     ax.set_title(
-        f"{place}: {current_year} pressure vs. pressure normal ({used_years[0]}–{used_years[1]} normal)",
+        f"{place}: is {current_year} pressure normal? (vs. {used_years[0]}–{used_years[1]} normal)",
         loc="left", fontsize=13, fontweight="bold",
     )
     ax.legend(loc="upper left", fontsize=9, frameon=False)
     ax.grid(alpha=0.2)
+    _add_top_margin(ax, frac=0.14)
     _caption(fig, source_note)
     return fig, ax
 
 
-def plot_pressure_monthly_boxplot(
-    df, pressure_col, place, reference_years=(1991, 2020), highlight_years=None, source_note="",
-):
-    """Part 3a: within-month pressure variation, using only the reference
-    period as "normal". Box = 25th-75th percentile (IQR) of the reference
-    period's daily values; whiskers extend to the true min/max observed in
-    that same period (not the usual 1.5x IQR Tukey rule) so anything
-    sitting outside the whiskers is genuinely outside the historical
-    baseline, not just a statistical outlier definition.
-    highlight_years (e.g. [2025, 2026]) have their own individual daily
-    values scattered on top, at the same day-level resolution as the box
-    itself - a single monthly-mean marker per year would (correctly) never
-    reach the whisker tips, since a month's mean is always less extreme
-    than its most extreme day, which made the whiskers look like they had
-    no data behind them. Plotting actual days instead keeps everything on
-    one scale and lets a highlighted year's own extremes show up directly."""
+def plot_pressure_monthly_boxplot(df, pressure_col, place, source_note=""):
+    """Part 3a: within-month pressure variation. Box = 25th-75th
+    percentile, whiskers = true min-max, both computed from each year's
+    mean pressure for that month - the same points shown as the coloured
+    scatter (one dot per year, coloured by year) - rather than from daily
+    values. A box built from daily values would have whisker tips no
+    scattered point could ever reach, since a month's mean is always less
+    extreme than its most extreme day (averaging narrows the range); here
+    the box/whiskers and the dots are the same data, so the whisker tips
+    are always an actual plotted year. Day-to-day variation is instead
+    covered by plot_pressure_vs_normal, which shows actual daily pressure."""
     d = df.dropna(subset=[pressure_col])
-    ref, used_years = _reference_period(d, reference_years)
-    data_by_month = [ref.loc[ref["month"] == m, pressure_col].values for m in range(1, 13)]
-
-    highlight_years = [y for y in (highlight_years or []) if y in d["year"].unique()]
+    monthly_means = d.groupby(["year", "month"])[pressure_col].mean().reset_index()
+    data_by_month = [monthly_means.loc[monthly_means["month"] == m, pressure_col].values
+                      for m in range(1, 13)]
 
     fig, ax = plt.subplots(figsize=(10.5, 5.5), constrained_layout=True)
     ax.boxplot(data_by_month, tick_labels=MONTH_LABELS, whis=(0, 100), patch_artist=True,
@@ -540,33 +544,36 @@ def plot_pressure_monthly_boxplot(
                                markersize=7, markeredgewidth=1.3),
                zorder=3)
 
-    marker_styles = ["o", "^", "s", "D"]
-    highlight_colors = ["black", "tab:green", "tab:orange", "tab:cyan"]
+    cmap = plt.get_cmap("coolwarm")
+    norm = plt.Normalize(vmin=monthly_means["year"].min(), vmax=monthly_means["year"].max())
     rng = np.random.default_rng(0)
-    for color, marker, year in zip(highlight_colors, marker_styles, sorted(highlight_years)):
-        sub = d[d["year"] == year]
-        jitter = rng.uniform(-0.15, 0.15, size=len(sub))
-        ax.scatter(sub["month"] + jitter, sub[pressure_col], color=color, marker=marker,
-                   s=16, alpha=0.75, linewidths=0, zorder=4, label=f"{year} daily values")
+    jitter = rng.uniform(-0.15, 0.15, size=len(monthly_means))
+    ax.scatter(monthly_means["month"] + jitter, monthly_means[pressure_col],
+               c=monthly_means["year"], cmap=cmap, norm=norm,
+               alpha=0.7, s=16, linewidths=0, zorder=2)
 
     ax.set_ylabel("Mean sea-level pressure (hPa)")
     ax.set_title(f"{place}: pressure variation within a month", loc="left", fontsize=13, fontweight="bold")
-
-    ref_label = f"{used_years[0]}–{used_years[1]}"
-    handles, labels = ax.get_legend_handles_labels()
-    box_handles = [
-        Patch(facecolor="tab:purple", alpha=0.4, label=f"25th–75th percentile ({ref_label})"),
-        Line2D([0], [0], color="0.3", linewidth=1.2, label=f"Min–max ({ref_label})"),
-        Line2D([0], [0], color="black", linewidth=1.8, label=f"Median ({ref_label})"),
-        Line2D([0], [0], marker="X", color="none", markerfacecolor="white",
-               markeredgecolor="black", markersize=7, markeredgewidth=1.3, label=f"Mean ({ref_label})"),
-    ]
-    ax.legend(handles=box_handles + handles, loc="upper left", fontsize=8, frameon=False, ncol=2)
+    ax.legend(
+        handles=[
+            Patch(facecolor="tab:purple", alpha=0.4, label="25th–75th percentile"),
+            Line2D([0], [0], color="0.3", linewidth=1.2, label="Min–max"),
+            Line2D([0], [0], color="black", linewidth=1.8, label="Median"),
+            Line2D([0], [0], marker="X", color="none", markerfacecolor="white",
+                   markeredgecolor="black", markersize=7, markeredgewidth=1.3, label="Mean"),
+        ],
+        loc="upper left", fontsize=8, frameon=False,
+    )
     ax.grid(alpha=0.2, axis="y")
+    _add_top_margin(ax, frac=0.20)
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, ax=ax, pad=0.01, aspect=30, label="Year")
 
     _caption(fig, source_note + (
-        f" Box/whiskers built from every daily value in the {ref_label} reference period; "
-        "highlighted years' points are their own individual days, at that same resolution."
+        " Each dot is one year's mean pressure for that month, coloured by year; "
+        "box/whiskers summarise that same set of points."
     ))
     return fig, ax
 
@@ -606,6 +613,7 @@ def plot_pressure_annual_trend(df, pressure_col, place, smooth_years=10, poly_de
     ax.set_title(f"{place}: has pressure changed over time?", loc="left", fontsize=13, fontweight="bold")
     ax.legend(loc="upper left", fontsize=9, frameon=False)
     ax.grid(alpha=0.2)
+    _add_top_margin(ax, frac=0.20)
     _caption(fig, source_note + (
         f" Overall linear trend across the full period: {slope * 10:+.2f} hPa/decade "
         "(the polynomial fit is for shape, not a trend rate)."
