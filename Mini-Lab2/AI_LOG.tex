@@ -1,0 +1,300 @@
+% AI_LOG.tex --- AI use log for Mini-Project 2 (Local Weather and Climate)
+%
+% How to use this in your project:
+%   1. Standalone: compile this file directly (pdflatex AI_LOG.tex) to get
+%      a preview PDF of just the log.
+%   2. Inside your report: copy everything from \section{AI Log} down to
+%      the end into your main .tex file (e.g. as Appendix E), or instead
+%      put \input{AI_LOG_body} around that same content in a separate file
+%      and \input{} it from your main document. Either way, drop the
+%      preamble below (down to \begin{document}) since your main report
+%      already has one.
+%
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\title{AI Log}
+\date{}
+
+\begin{document}
+
+\section{AI Log --- Mini-Project 2: Local Weather and Climate}
+
+\textbf{Tool used:} Claude Code (Claude Sonnet 5, Anthropic), used interactively in a
+chat/CLI session with direct access to the repository files and a Python environment
+(pandas, numpy, matplotlib, scipy).
+
+\textbf{Scope of use:} AI wrote all of the Python code in \texttt{Mini-Lab2/}
+(\texttt{climate\_common.py}, \texttt{climate\_plots.py}, \texttt{plot\_climate.py}) across
+a single ongoing conversation. Every change was produced in response to a specific request
+from the team --- usually a plain-language ask, sometimes a screenshot of a rendered chart or
+of the assignment PDF's task list --- and the team reviewed the actual rendered PNGs after
+every change, which is what drove several rounds of revision on the same chart (most notably
+the pressure box plot, entries~\ref{item:pbox1}--\ref{item:pbox3}).
+
+This log is a factual record of what was asked and done. The ``You understand and can
+explain your results'' requirement from the assignment is not something the AI can certify
+on the team's behalf --- before submitting, the team should be able to explain, without this
+log open, what each chart shows and why (see Section~\ref{sec:open-items}).
+
+\subsection*{Log of prompts and actions}
+
+Each entry: what was asked $\rightarrow$ what the AI did $\rightarrow$ what happened to it
+(accepted / modified / rejected) and why.
+
+\begin{enumerate}[leftmargin=*, itemsep=0.8em]
+
+\item \textbf{``Can you make a generic plotter, that can plot the different plots from the
+folder `Oslo'? I want to be able to change the folder to another place, and it should find
+the files in that folder and plot it.''}
+$\rightarrow$ Built three modules: \texttt{climate\_common.py} (discovers every CSV in a
+place's folder and parses the seklima.met.no export format --- \texttt{;}-delimited, UTF-8
+BOM, Norwegian decimal commas, \texttt{-} for missing, a trailing source-note row); a value
+column is matched to a physical quantity (temperature/precipitation/pressure/wind) by its
+\emph{Norwegian column header}, not the filename, so the same code works unchanged for any
+other place's folder. First chart: a shaded climate-normal band for daily max/min temperature
+with 2025's actual values overlaid, matching Part 1's two listed tasks (climate profile +
+2025-vs-normal comparison) in one figure.
+$\rightarrow$ \textbf{Accepted}; the team confirmed by photo that this matched the actual
+assignment wording.
+
+\item \textbf{``Can you add a plot that shows temperature something like this as well?''}
+(a Carbon Brief ``one line per year'' chart) $\rightarrow$ \textbf{``Can you use the daily
+temps instead of finding the monthly?''}
+$\rightarrow$ First built a monthly-resolution version, then immediately rebuilt it at daily
+resolution once asked: one line per year of 7-day-smoothed daily temperature anomaly against
+a day-of-year climatology, coloured by decade, most recent years picked out in bold.
+$\rightarrow$ \textbf{Accepted} (daily version kept; this chart was later dropped in the
+Part-3/cleanup pass, entry~\ref{item:cleanup}).
+
+\item \textbf{``Seems to be too low resolution to be useful\ldots the bands just show the
+max\ldots do you have a suggestion?''} (on the temperature climate-profile chart)
+$\rightarrow$ Diagnosed the problem: the shaded band was the all-time record min/max, which
+is so wide it almost never excludes anything. Replaced it with a smoothed 10th--90th
+percentile ``typical range'' band, with the true record extremes kept as thin dotted
+reference lines.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you color the section `january' gray, `february' white, and so on\ldots
+on days 1--365?''}
+$\rightarrow$ Added a shared \texttt{\_shade\_months()} helper (alternating light-gray/white
+vertical bands keyed to calendar months) and applied it to every day-of-year chart.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Does not say a lot?''} (on the precipitation monthly bar chart, mean $\pm$ 1
+std)
+$\rightarrow$ Replaced the bar-plus-error-bar chart with a box plot (10th--90th percentile
+whiskers) with every individual year's monthly total scattered on top --- mean $\pm$ std
+hides that precipitation is right-skewed and can't go below zero.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you try to fit a gamma distribution to the plots? Maybe create new plots
+so they don't pollute the already existing plots.''}
+$\rightarrow$ Added two new charts (existing ones untouched): a daily wet-day rainfall-amount
+histogram with a fitted \texttt{scipy.stats.gamma} curve plus a Q--Q plot, and a 12-panel grid
+fitting gamma separately to each calendar month's year-to-year totals. While building the
+second one, found and fixed a real bug: \texttt{pandas}' \texttt{.sum()} silently returns 0
+(not NaN) for an all-missing group, which had been feeding a spurious 0~mm month into the
+fit; separately, one genuinely dry month (April 1974, confirmed against the raw CSV) had to
+be excluded from its own fit since a continuous distribution assigns exactly 0 zero
+probability.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you name things? As in mark 2025/26, and name what the box-plot
+shows?''}
+$\rightarrow$ Added 2025/2026 highlight markers (hollow if the month was still in progress)
+and explicit legend labels for every box element. While doing so, found the existing legend
+mislabeled the box as ``10th--90th percentile'': with \texttt{whis=(10, 90)}, matplotlib
+actually draws the box as the 25th--75th percentile (IQR) and only the \emph{whiskers} at the
+10th/90th --- fixed on both the precipitation and (for consistency) the pressure box plot.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Maybe color code it as well? Adding a gradient?''} \textbf{``Can you add an
+average as well to the box plot?''}
+$\rightarrow$ Added a year-coloured (coolwarm) scatter with a colourbar to the precipitation
+box plot, and a mean marker (\texttt{showmeans}) to both the precipitation and pressure box
+plots, to make the skew (mean pulled above the median in wet months) visible directly.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you add a variable where we can choose the first year, as in a lower
+bound?''}
+$\rightarrow$ Added \texttt{START\_YEAR} to \texttt{plot\_climate.py}; every chart is rebuilt
+from only that year onward when set (\texttt{None} keeps the full record). The team later set
+this to \texttt{1991} themselves.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you change the pressure whiskers to max and min in the reference period,
+instead of the 1.5 IQR? Can you also make the legends describe what they show, as in `25--75
+percentile (reference years)'?''}
+$\rightarrow$ Restricted the box/whisker statistic on both the precipitation and pressure box
+plots to the 1991--2020 reference period specifically (the scatter/highlight layer kept using
+the full record), and switched the pressure whiskers from the default 1.5$\times$IQR (Tukey)
+rule to the true reference-period min/max, so anything outside the whiskers is genuinely
+unprecedented rather than a statistical-outlier cutoff. Every legend entry across both charts
+was relabelled with its exact period, e.g. ``25th--75th percentile (1991--2020)''.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``I need a graph to see if the precipitation has increased over time. Maybe a
+spaghetti plot? Cumulative plot?''}
+$\rightarrow$ Built a two-panel chart: annual totals with a 10-year moving average on top, and
+the cumulative departure from the long-term mean (a ``mass curve'', standard hydrological
+technique) on the bottom --- a single straight trend line through noisy annual bars is easy
+to misread as ``no trend'' even when a real one exists.
+$\rightarrow$ \textbf{Accepted}, later simplified (entry~\ref{item:masscurve}).
+
+\item \textbf{``Can you add a poly fit and poly val to the graph? Can you also try to create
+a spaghetti plot for rain as well?''}
+$\rightarrow$ Added a degree-2 polynomial fit (\texttt{np.polyfit}/\texttt{np.polyval})
+alongside the moving average on the precipitation trend chart; and, as a new chart, one line
+per year of \emph{cumulative} precipitation through the year (day-of-year on the x-axis,
+coloured by decade) --- raw daily rainfall is too spiky for a year-over-year spaghetti plot,
+but its running total is smooth and monotonic.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you do a suitable test to compare the distributions of the climate
+profile and the precipitation of 2025?''}
+$\rightarrow$ Built \texttt{climate\_stats.py}: a two-sample Kolmogorov--Smirnov test
+(primary) plus Mann-Whitney U (secondary), explicitly \emph{not} a t-test, since daily
+precipitation is right-skewed and a t-test's normality assumption/means-only comparison would
+be the wrong tool; plus an ECDF chart showing what the KS statistic means visually.
+\textbf{Judgement call, stated to the team at the time:} the request was ambiguous between
+temperature and precipitation --- read as precipitation, given the conversation's focus.
+$\rightarrow$ \textbf{Accepted at the time, later removed entirely}
+(entry~\ref{item:cleanup}) as not on the assignment's task list.
+
+\item \textbf{``Can you make the plot more pretty? Can you add the 2025 and 2026 markers to
+Oslo\_pressure\_monthly\_boxplot as well?''}
+$\rightarrow$ Polished the ECDF chart (shaded gap between curves, an annotated arrow at the
+KS statistic instead of an all-but-invisible line, percentage axis); added 2025/2026 markers
+(monthly-mean based, first version) to the pressure box plot.
+$\rightarrow$ \textbf{Accepted at the time} (ECDF chart later removed; the pressure-box
+markers went through two more rounds, entries~\ref{item:pbox1}--\ref{item:pbox3}).
+
+\item \textbf{``I feel like the pressure graphs don't really answer these criteria?''}
+(screenshot of Part 3a's actual task text: ``explore variations during a month'' /
+``investigate whether pressure has changed over time'' / the framing question ``is this
+pressure normal for X?'')
+$\rightarrow$ Pointed out that the two existing pressure charts answered the two listed
+tasks but not the section's own framing question. Added \texttt{plot\_pressure\_vs\_normal},
+mirroring the Part 1 temperature chart exactly: a smoothed typical-range band with the actual
+year's daily pressure overlaid.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you create a plot of the total rainfall with a subplot for every month,
+to see if there is an increase in that specific month over time?''} \textbf{``Can you add a
+poly fit and value?''}
+$\rightarrow$ Built a 12-panel grid (one panel per calendar month) with each month's own
+linear trend (coloured red/blue by direction) and a degree-2 polynomial fit. This revealed
+that the increase is not uniform across the year --- July/August/September/December trend
+clearly wetter, while April and November trend \emph{drier}. (Fixed one rendering bug along
+the way: an out-of-bounds \texttt{fig.legend()} was being silently clipped off the saved PNG;
+replaced with the existing caption-text convention.)
+$\rightarrow$ \textbf{Accepted.}
+
+\item \label{item:cleanup} \textbf{``Here are the actual tasks. Can you check what we have,
+improve it, and remove the plots not needed?''} (assignment PDF attached)
+$\rightarrow$ Cross-checked every chart against the task list. Two decisions could only be
+made by the team, so these were asked directly rather than assumed:
+\begin{itemize}[leftmargin=*]
+\item \emph{Part 3 says choose Pressure \textbf{or} Wind} --- both were being generated.
+Team chose \textbf{Pressure}.
+\item \emph{Which ``bonus'' charts (not on the task list) to keep} --- of the temperature
+spaghetti, precipitation cumulative spaghetti, the KS-test/ECDF chart, and the older
+\texttt{precip\_annual\_trend} (superseded by the cumulative-trend chart), the team kept only
+the \textbf{precipitation cumulative spaghetti}.
+\end{itemize}
+Removed \texttt{plot\_wind\_monthly\_climatology},
+\texttt{plot\_temperature\_daily\_spaghetti},
+\texttt{plot\_precip\_ecdf\_2025\_vs\_normal} together with the whole
+\texttt{climate\_stats.py} module, and \texttt{plot\_precip\_annual\_trend}, plus their stale
+PNGs. Figure count went from 13 to 9.
+$\rightarrow$ \textbf{Accepted.}
+
+\item \label{item:masscurve} \textbf{``Can you remove this part of the rain plot?''}
+(screenshot of the cumulative-anomaly ``mass curve'' bottom panel)
+$\rightarrow$ Removed that panel; the precipitation trend chart is a single panel again
+(annual bars + moving average + polynomial fit + long-term mean line).
+$\rightarrow$ \textbf{Accepted.}
+
+\item \label{item:pbox1} \textbf{``\texttt{Oslo\_pressure\_annual\_trend} doesn't really tell
+us something about `has it changed over time'. Also,
+\texttt{Oslo\_pressure\_monthly\_boxplot} has whiskers with no datapoint at the ends?''}
+$\rightarrow$ Rebuilt the pressure annual-trend chart the same way the precipitation one had
+already been fixed (moving average + polynomial fit through the noisy annual points). For the
+box plot: diagnosed the ``floating whisker'' as a resolution mismatch --- the whiskers were
+built from \emph{daily} values while the highlighted-year dots were \emph{monthly means},
+which can mathematically never reach a daily extreme. First fix attempt: plot each
+highlighted year's actual daily values instead of one monthly-mean marker. (Also caught and
+fixed an unrelated stray title bug, ``pressure variation within a \emph{year}'', that had crept
+in during an earlier edit and should have read ``month''.)
+$\rightarrow$ \textbf{Modified next round} (entry~\ref{item:pbox2}).
+
+\item \label{item:pbox2} \textbf{``I actually liked it more before, now it seems too
+crowded? And there are still no datapoints at the max/min.''}
+$\rightarrow$ Realised the daily-value swarm was both busier than the earlier version \emph{and}
+still didn't fully fix the mismatch (a highlighted year's own extreme rarely coincides with
+the 30-year record extreme). Tried removing the per-year overlay entirely, back to a plain
+box plot.
+$\rightarrow$ \textbf{Rejected} --- the team wanted the coloured scatter kept, just without
+the mismatch (see next entry).
+
+\item \label{item:pbox3} \textbf{``I want the scatter to a degree, like it was in the
+attached image, but there are no datapoints at the ends of the whiskers.''}
+$\rightarrow$ Root-caused properly this time: rebuilt the box \emph{and} whiskers from the
+same array being scattered (each year's mean pressure for that month), instead of from daily
+values, so the whisker tips are always literally the most extreme plotted dot. Restored the
+year-colour gradient and colourbar.
+$\rightarrow$ \textbf{Accepted.} Note: this changes what the chart technically measures ---
+see Section~\ref{sec:open-items}.
+
+\item \textbf{``A lot of the legends here overlap with the graph\ldots maybe add a little to
+the top of the y-lim?''} (4 named charts) \textbf{``The first two could need another nudge
+upwards?''}
+$\rightarrow$ Added a shared \texttt{\_add\_top\_margin()} helper and applied it with a margin
+tuned per chart (temperature: a small 6\% nudge; the three pressure charts: 12--20\%, the two
+noisiest ones increased further on request).
+$\rightarrow$ \textbf{Accepted.}
+
+\item \textbf{``Can you condense all the things I have asked for here\ldots create a tex
+file with that summary?''}
+$\rightarrow$ This file.
+
+\end{enumerate}
+
+\subsection*{Open items for the team}
+\label{sec:open-items}
+
+A few places where the AI made a call, or where a chart's exact meaning is easy to
+misstate, that the team should actively confirm and be ready to explain --- not just inherit
+silently:
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{\texttt{Oslo\_pressure\_monthly\_boxplot} shows year-to-year spread of each
+month's \emph{mean} pressure, not day-to-day spread within a month.} That day-to-day
+question is answered instead by \texttt{Oslo\_pressure\_vs\_normal} (actual daily pressure
+against a smoothed typical-range band). Be ready to explain why the box plot uses one year's
+mean per point rather than individual days --- it's because a box built from daily values
+can never have its whiskers coincide with a scattered point at monthly-mean resolution (see
+entries~\ref{item:pbox1}--\ref{item:pbox3}).
+\item \textbf{\texttt{START\_YEAR = 1991}} restricts every current chart to 1991 onward, even
+though the raw temperature/precipitation records go back to 1937 and pressure/wind to 1957.
+Confirm this is the intended window for the report, not an oversight.
+\item \textbf{Part 3 uses Pressure, not Wind} (team's explicit choice, entry~\ref{item:cleanup}).
+The wind columns are still in the raw \texttt{wind\_pressure\_Oslo.csv} if the team changes
+its mind, but the plotting function for it was deleted (retrievable from git history).
+\item \textbf{The gamma-fit ``amount of precipitation'' teamwork question} is answered in
+code by \emph{two} different definitions --- daily amount on wet days
+(\texttt{Oslo\_precip\_daily\_gamma\_fit}) and monthly total
+(\texttt{Oslo\_precip\_monthly\_gamma\_fit}) --- but the report still needs a written sentence
+or two making that comparison explicit; the code doesn't write the discussion for you.
+\item Appendix D (AI Declaration Form) and Appendix F (team-efficiency reflections) are not
+things the AI can produce on the team's behalf --- still to do.
+\end{itemize}
+
+\end{document}
