@@ -123,10 +123,10 @@ rel_deviation_smooth = np.convolve(rel_deviation, kernel, mode="same")
 
 fig3, ax3 = plt.subplots(figsize=(11, 5.5))
 add_visible_spectrum(ax3)
-ax3.plot(wavelength_nm, rel_deviation, lw=0.4, color=KURUCZ_COLOR, alpha=0.6,
+ax3.plot(wavelength_nm, rel_deviation, lw=0.4, color=KURUCZ_COLOR, alpha=0.9,
          label="Relative deviation (0.1 nm)")
-ax3.plot(wavelength_nm, rel_deviation_smooth, lw=1.5, color="k",
-         label="10 nm running mean")
+#ax3.plot(wavelength_nm, rel_deviation_smooth, lw=1.5, color="k",
+#         label="10 nm running mean")
 ax3.axhline(0, color="grey", lw=0.8)
 ax3.set_ylim(-100, 60)
 ax3.set_xlim(250, 3000)
